@@ -1,11 +1,11 @@
-from flask import Flask, request, jsonify
 import os
 import requests
 import mimetypes
 import json
-from urllib import request as url_request
-from tago import Analysis
+from urllib import request
+from flask import Flask, jsonify
 from requests.auth import HTTPDigestAuth
+from tago import Analysis
 
 app = Flask(__name__)
 
@@ -17,63 +17,61 @@ url_create_face = f"http://{host}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=
 username = 'admin'
 password = 'Inteliksa6969'
 
-# Sincronización de usuarios
-def sync_users(context):
 
-    # Procesar rostros
-    for usuario in usuarios_sap: # Itera sobre los usuarios de SAP
-        employee_no = usuario.get("employeeNo") # Obtiene el numero de empleado actual.
-        if not employee_no: # Si el usuario no tiene "employee_no" se saltea este usuario
+# Función para sincronizar usuarios con Hikvision
+def sync_users():
+    logs = []
+
+    # Eliminar rostros existentes
+    for usuario in usuarios_sap:
+        employee_no = usuario.get("employeeNo")
+        if not employee_no:
             continue
 
-        # Eliminar rostro existente
-        delete_payload = { # Contrucción del payload para eliminar rostro
+        delete_payload = {
             "FaceInfoDelCond": {
                 "faceLibType": "blackFD",
-                "EmployeeNoList": [{"employeeNo": employee_no}] # Solo se incluye el numero de empleado del usuario actual.
+                "EmployeeNoList": [{"employeeNo": employee_no}]
             }
         }
-        try:
-            response = requests.put(url_delete_face, json=delete_payload, auth=HTTPDigestAuth(username, password), timeout=10)
-            if response.status_code == 200:
-                context.log(f"🗑️ Rostro eliminado para empleado {employee_no}")
-            else:
-                context.log(f"⚠️ Error al eliminar rostro para {employee_no}: {response.text}")
-        except requests.exceptions.RequestException as e:
-            context.log(f"⚠️ Error en la solicitud DELETE para {employee_no}: {e}")
 
-    # Filtrar usuarios que tienen faceURL en SAP (para subir nuevos rostros)
-    usuarios_a_subir = [u for u in usuarios_sap if u.get("faceURL")] # Crea nueva lista que contiene los usuarios de SAP con "faceURL"
-    context.log(f"Usuarios a subir: {len(usuarios_a_subir)}") 
+        try:
+            response = requests.put(URL_DELETE_FACE, json=delete_payload, auth=HTTPDigestAuth(HIKVISION_USERNAME, HIKVISION_PASSWORD), timeout=10)
+            if response.status_code == 200:
+                logs.append(f"🗑️ Rostro eliminado para empleado {employee_no}")
+            else:
+                logs.append(f"⚠️ Error al eliminar rostro para {employee_no}: {response.text}")
+        except requests.exceptions.RequestException as e:
+            logs.append(f"⚠️ Error en la solicitud DELETE para {employee_no}: {e}")
+
+    # Filtrar usuarios con faceURL
+    usuarios_a_subir = [u for u in usuarios_sap if u.get("faceURL")]
+    logs.append(f"Usuarios a subir: {len(usuarios_a_subir)}")
 
     # Subir imágenes a Hikvision
     for usuario in usuarios_a_subir:
-        image_url = usuario.get("faceURL") # Obtiene la URL de la imagen
-        employee_no = usuario.get("employeeNo") # Obtiene el "employeeNo" del usuario
-        if not image_url: # Si el usuario no tiene "URL" valida se salta este usuario.
-            context.log(f"Error: El empleado {employee_no} no tiene una URL de imagen válida.")
+        image_url = usuario.get("faceURL")
+        employee_no = usuario.get("employeeNo")
+
+        if not image_url:
+            logs.append(f"Error: El empleado {employee_no} no tiene una URL de imagen válida.")
             continue
 
-        temp_image_path = f"{employee_no}.jpg" # Usa el "employee_no" para nombrar temporalmente el archivo que se va descargar
-        context.log(f"Descargando imagen para empleado {employee_no}: {image_url}")
-        try:
-            # Descargar imagen
-            request.urlretrieve(image_url, temp_image_path) # Descarga la imagen desde la URL y se guarda con el nombre temporal
+        temp_image_path = f"{employee_no}.jpg"
+        logs.append(f"Descargando imagen para empleado {employee_no}: {image_url}")
 
-            # Verificar que la imagen se haya guardado correctamente
-            # "os.path.exists(temp_image_path)" verifica que el archivo exista
-            # "os.path.getsize(temp_image_path)" verifica si el archivo tiene un tamaño mayor a cero
+        try:
+            request.urlretrieve(image_url, temp_image_path)
+
             if not os.path.exists(temp_image_path) or os.path.getsize(temp_image_path) == 0:
-                context.log(f"Error: No se pudo descargar correctamente la imagen para {employee_no}.")
+                logs.append(f"Error: No se pudo descargar correctamente la imagen para {employee_no}.")
                 continue
 
-            # Leer la imagen
-            with open(temp_image_path, "rb") as img_file: # Abre el archivo en modo binario "rb" y lee su contenido
-                img_data = img_file.read() # Guarda los datos de la imagen en la variable "img_data"
+            with open(temp_image_path, "rb") as img_file:
+                img_data = img_file.read()
 
-            file_type = mimetypes.guess_type(temp_image_path)[0] or 'image/jpeg' # Determina el tipo MIME de la imagen
+            file_type = mimetypes.guess_type(temp_image_path)[0] or 'image/jpeg'
 
-            # Datos de FaceInfo para Hikvision
             face_info = {
                 "FaceInfo": {
                     "employeeNo": employee_no,
@@ -81,21 +79,22 @@ def sync_users(context):
                 }
             }
 
-            # Enviar la imagen a Hikvision
             files = {'FaceDataRecord': ("face.jpg", img_data, file_type)}
             data = {'data': json.dumps(face_info)}
-            response = requests.post(url_create_face, data=data, files=files, auth=HTTPDigestAuth(username, password), timeout=10) # ENVIO DE IMAGEN
+
+            response = requests.post(URL_CREATE_FACE, data=data, files=files, auth=HTTPDigestAuth(HIKVISION_USERNAME, HIKVISION_PASSWORD), timeout=10)
             if response.status_code == 200:
-                context.log(f"✅ Rostro agregado correctamente para {employee_no}")
+                logs.append(f"✅ Rostro agregado correctamente para {employee_no}")
             else:
-                context.log(f"❌ Error al agregar rostro para {employee_no}: {response.text}")
+                logs.append(f"❌ Error al agregar rostro para {employee_no}: {response.text}")
+
         except Exception as e:
-            context.log(f"⚠️ Error al procesar imagen para {employee_no}: {e}")
+            logs.append(f"⚠️ Error al procesar imagen para {employee_no}: {e}")
+
         finally:
-            # Eliminar archivo temporal después de usarlo
             if os.path.exists(temp_image_path):
                 os.remove(temp_image_path)
-                context.log(f"🗑️ Archivo temporal eliminado: {temp_image_path}")
+                logs.append(f"🗑️ Archivo temporal eliminado: {temp_image_path}")
 
     context.log("Proceso completado.")
 @app.route('/sync', methods=['POST'])
@@ -111,6 +110,13 @@ def my_analysis(context, scope):
     context.log('Alcance del análisis:', scope)
     sync_users(context)
 
-# Inicializar el análisis
-ANALYSIS_TOKEN = 'a-6d6726c2-f167-4610-a9e5-5a08a92b6bb3'  # Reemplaza con tu token de análisis de TagoIO
-Analysis(ANALYSIS_TOKEN).init(my_analysis)
+
+# Endpoint en Flask para iniciar la sincronización
+@app.route('/sync-users', methods=['GET'])
+def api_sync_users():
+    logs = sync_users()
+    return jsonify({"status": "OK", "logs": logs})
+
+# Iniciar el servidor Flask
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=5000, debug=True)
