@@ -1,12 +1,13 @@
-# Tener en cuenta peticion POST para consultar usuarios MAX 30 usuarios
-
+from flask import Flask, request, jsonify
 import os
 import requests
 import mimetypes
 import json
-from urllib import request
+from urllib import request as url_request
 from tago import Analysis
 from requests.auth import HTTPDigestAuth
+
+app = Flask(__name__)
 
 # Configuración
 host = "34.221.158.219"
@@ -15,7 +16,6 @@ url_delete_face = f"http://{host}/ISAPI/Intelligent/FDLib/FDSearch/Delete?format
 url_create_face = f"http://{host}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json&devIndex={devIndex}"
 username = 'admin'
 password = 'Inteliksa6969'
-
 
 # Sincronización de usuarios
 def sync_users(context):
@@ -98,7 +98,13 @@ def sync_users(context):
                 context.log(f"🗑️ Archivo temporal eliminado: {temp_image_path}")
 
     context.log("Proceso completado.")
+@app.route('/sync', methods=['POST'])
+def sync():
+    sync_users()
+    return jsonify({"status": "success", "message": "Sincronización completada"}), 200
 
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
 # Análisis principal
 def my_analysis(context, scope):
     context.log('Iniciando análisis...')
