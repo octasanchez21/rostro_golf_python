@@ -8,20 +8,20 @@ from requests.auth import HTTPDigestAuth
 from tago import Analysis
 
 # Configuración
-db_path = "sap_users.db"
-host = "34.221.158.219"
-devIndex = "F5487AA0-2485-4CFB-9304-835DCF118B43"
-url_create_face = f"http://{host}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json&devIndex={devIndex}"
-url_delete_face = f"http://{host}/ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json&devIndex={devIndex}"
-username = 'admin'
-password = 'Inteliksa6969'
-
-sap_url = "http://localhost:3000/get-socios"
-sap_headers = {"Authorization": "SKIntegracionXetuxTruoraAPIREST#.01"}
+DB_PATH = "sap_users.db"
+HOST = "34.221.158.219"
+DEV_INDEXES = [
+    "F5487AA0-2485-4CFB-9304-835DCF118B43",  # Primer dispositivo
+    "08395809-0EFA-48EA-B37F-DC628A83398A"   # Segundo dispositivo (ejemplo, cambiar por el real)
+]
+USERNAME = 'admin'
+PASSWORD = 'Inteliksa6969'
+SAP_URL = "http://localhost:3000/get-socios"
+SAP_HEADERS = {"Authorization": "SKIntegracionXetuxTruoraAPIREST#.01"}
 
 # Inicializar la base de datos
 def init_db():
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
@@ -36,17 +36,17 @@ def init_db():
 # Obtener datos de SAP
 def get_sap_users():
     try:
-        response = requests.get(sap_url, headers=sap_headers, timeout=10)
+        response = requests.get(SAP_URL, headers=SAP_HEADERS, timeout=10)
         response.raise_for_status()
         data = response.json()
-        return [u for u in data.get("contenido", []) if u.get("employeeNo") ]
+        return [u for u in data.get("contenido", []) if u.get("employeeNo")]
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Error al obtener usuarios de SAP: {e}")
         return []
 
 # Obtener datos de la base de datos
 def get_stored_users():
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT employeeNo, faceURL FROM usuarios")
     stored_users = {row[0]: row[1] for row in cursor.fetchall()}
@@ -55,7 +55,7 @@ def get_stored_users():
 
 # Guardar nueva respuesta en la base de datos
 def update_database(users):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM usuarios")  # Limpiar datos anteriores
     for user in users:
@@ -66,20 +66,22 @@ def update_database(users):
 
 # Eliminar rostro en Hikvision
 def delete_face(employee_no, context):
-    delete_payload = {
-        "FaceInfoDelCond": {
-            "faceLibType": "blackFD",
-            "EmployeeNoList": [{"employeeNo": employee_no}]
+    for devIndex in DEV_INDEXES:
+        delete_url = f"http://{HOST}/ISAPI/Intelligent/FDLib/FDSearch/Delete?format=json&devIndex={devIndex}"
+        delete_payload = {
+            "FaceInfoDelCond": {
+                "faceLibType": "blackFD",
+                "EmployeeNoList": [{"employeeNo": employee_no}]
+            }
         }
-    }
-    try:
-        response = requests.put(url_delete_face, json=delete_payload, auth=HTTPDigestAuth(username, password), timeout=10)
-        if response.status_code == 200:
-            context.log(f"🗑️ Rostro eliminado para empleado {employee_no}")
-        else:
-            context.log(f"⚠️ Error al eliminar rostro para {employee_no}: {response.text}")
-    except requests.exceptions.RequestException as e:
-        context.log(f"⚠️ Error en la solicitud DELETE para {employee_no}: {e}")
+        try:
+            response = requests.put(delete_url, json=delete_payload, auth=HTTPDigestAuth(USERNAME, PASSWORD), timeout=10)
+            if response.status_code == 200:
+                context.log(f"🗑️ Rostro eliminado para {employee_no} en dispositivo {devIndex}")
+            else:
+                context.log(f"⚠️ Error al eliminar rostro para {employee_no} en dispositivo {devIndex}: {response.text}")
+        except requests.exceptions.RequestException as e:
+            context.log(f"⚠️ Error en la solicitud DELETE para {employee_no} en dispositivo {devIndex}: {e}")
 
 # Agregar nuevo rostro en Hikvision
 def add_face(usuario, context):
@@ -102,11 +104,13 @@ def add_face(usuario, context):
         files = {'FaceDataRecord': ("face.jpg", img_data, file_type)}
         data = {'data': json.dumps(face_info)}
         
-        response = requests.post(url_create_face, data=data, files=files, auth=HTTPDigestAuth(username, password), timeout=10)
-        if response.status_code == 200:
-            context.log(f"✅ Rostro agregado correctamente para {employee_no}")
-        else:
-            context.log(f"❌ Error al agregar rostro para {employee_no}: {response.text}")
+        for devIndex in DEV_INDEXES:
+            create_url = f"http://{HOST}/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json&devIndex={devIndex}"
+            response = requests.post(create_url, data=data, files=files, auth=HTTPDigestAuth(USERNAME, PASSWORD), timeout=10)
+            if response.status_code == 200:
+                context.log(f"✅ Rostro agregado correctamente para {employee_no} en dispositivo {devIndex}")
+            else:
+                context.log(f"❌ Error al agregar rostro para {employee_no} en dispositivo {devIndex}: {response.text}")
     except Exception as e:
         context.log(f"⚠️ Error al procesar imagen para {employee_no}: {e}")
 
