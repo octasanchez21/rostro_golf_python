@@ -90,5 +90,5 @@ def my_analysis(context, scope):
     sync_users(context)
 
 # Inicializar el análisis
-ANALYSIS_TOKEN = 'a-b74b3137-e3ba-40b4-9978-1ee47ed5544b'
+ANALYSIS_TOKEN = 'a-bf743737-88be-41d7-a6be-edfc32dac943'
 Analysis(ANALYSIS_TOKEN).init(my_analysis)
