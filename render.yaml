@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: rostro-sync
+    runtime: python
+    buildCommand: ""
+    startCommand: "python api_sync_faces.py"
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
