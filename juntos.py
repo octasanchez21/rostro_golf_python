@@ -151,4 +151,5 @@ def my_analysis(context, scope):
 # Inicializar base de datos e iniciar análisis
 init_db()
 ANALYSIS_TOKEN = 'a-bf743737-88be-41d7-a6be-edfc32dac943'
-Analysis(ANALYSIS_TOKEN).init(my_analysis)
+if __name__ == "__main__":
+    Analysis(ANALYSIS_TOKEN).init(my_analysis)
