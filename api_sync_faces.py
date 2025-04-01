@@ -14,9 +14,13 @@ def handle_sync():
     sync_users(Context())
     return {"message": "✅ Rostros sincronizados correctamente"}, 200
 
+import os
+# ... (código de configuración de Flask, rutas, etc.)
+
 if __name__ == "__main__":
-    import os
+    # Obtiene el puerto desde la variable de entorno PORT, con un default por si falta
     port = int(os.environ.get("PORT", 5000))
-    init_db()
+    # Inicia la aplicación Flask escuchando en todas las interfaces (0.0.0.0) y en el puerto especificado
     app.run(host="0.0.0.0", port=port)
+
 
